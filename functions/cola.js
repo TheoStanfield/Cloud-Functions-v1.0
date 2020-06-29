@@ -2,13 +2,16 @@ class Cola {
     constructor() {
         this.personasEnCola = [];
     }
-    total() {
-        return this.personasEnCola;
+    enqueue(keyUsuario) {
+        this.personasEnCola.push(keyUsuario);
     }
-    quien(posicion) {
+    dequeue() {
+        this.personasEnCola.shift();
+    }
+    who(posicion) {
         return this.personasEnCola[posicion];
     }
-    donde(keyUsuario) {
+    where(keyUsuario) {
         for (let i = 0; i < this.personasEnCola.length(); i++) {
             if (this.personasEnCola[i] === keyUsuario) {
                 return i;
@@ -16,20 +19,17 @@ class Cola {
         }
         return 'Error';
     }
-    agregar(keyUsuario) {
-        this.personasEnCola.push(keyUsuario);
-    }
-    salir() {
-        this.personasEnCola.shift();
-    }
-    estaVacio() {
+    isEmpty() {
         return this.personasEnCola.length === 0;
     }
-    proximo() {
-        return !this.estaVacio() ? this.personasEnCola[0] : undefined;
+    peek() {
+        return !this.isEmpty() ? this.personasEnCola[0] : undefined;
     }
-    cantidad() {
+    length() {
         return this.personasEnCola.length;
+    }
+    total() {
+        return this.personasEnCola;
     }
 }
 

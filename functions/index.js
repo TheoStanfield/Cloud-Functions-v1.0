@@ -4,43 +4,71 @@ const Cola = require('./cola.js');
 
 admin.initializeApp();
 const db = admin.firestore();
+const localesRef = db.collection('locales');
+const usuariosRef = db.collection('users');
 
 exports.agregarCola = functions.https.onCall((data, context) => {
-    console.log('Function Called');
-
+    const uid = context.auth.uid;
     const keyLocal = data.keyLocal;
-
-    let oldCantidad = 0;
-    let newCantidad = 0;
+    let cantidadDePersonas = 0;
     let personas = [];
-    let q = new Cola()
+    let cola = new Cola();
 
-    db.collection('locales').doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera')
+    localesRef.doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera')
     .get().then(doc => {
         if (!doc.exists) {
-            console.log('El local ' + keyLocal + ' no existe.');
+            console.warn('Error: El local ' + keyLocal + ' no existe.');
         } else {
-            oldCantidad = doc.data().cantidad;
+            cantidadDePersonas = doc.data().cantidad;
             personas = doc.data().personasEnCola;
-            console.log('Lista original es: ' + personas);
-
-            for (let i = 0; i < personas.length; i++) {
-                q.agregar(personas[i]);
-                console.log('Dato a agregarse: ' + personas[i] + '. Largo actual: ' + q.cantidad());
+            if (!(personas[0] === null)) {
+                for (let i = 0; i < personas.length; i++) {
+                    cola.enqueue(personas[i]);
+                }
             }
-
-            console.log('Lista q: ' + q.total());
-            q.agregar('personaTest');
-            newCantidad = oldCantidad + 1;
-
-            db.collection('locales').doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera').set({
-                cantidad: newCantidad,
-                personasEnCola: q.total()
-            } , { merge: true });
+            cola.enqueue(uid);
+            localesRef.doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera').set({
+                cantidad: cantidadDePersonas + 1,
+                personasEnCola: cola.total()
+            }, { merge: true });
         }
         return;
     }).catch(err => {
-        console.log('Error', err);
+        console.warn('Error', err);
+    });
+    return;
+});
+
+exports.eliminarCola = functions.https.onCall((data, context) => {
+    const keyLocal = data.keyLocal;
+    let cantidadDePersonas = 0;
+    let personas = [];
+    let cola = new Cola();
+
+    localesRef.doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera')
+    .get().then(doc => {
+        if (!doc.exists) {
+            console.warn('Error: El local ' + keyLocal + ' no existe.');
+        } else {
+            cantidadDePersonas = doc.data().cantidad;
+            personas = doc.data().personasEnCola;
+            if (!(personas[0] === null)) {
+                for (let i = 0; i < personas.length; i++) {
+                    cola.enqueue(personas[i]);
+                }
+            }
+            cola.dequeue();
+            if (cola.isEmpty() || cantidadDePersonas === 1) {
+                cola.enqueue(null)
+            }
+            localesRef.doc(keyLocal).collection('colaDeEspera').doc('colaDeEspera').set({
+                cantidad: cantidadDePersonas - 1,
+                personasEnCola: cola.total()
+            }, { merge: true });
+        }
+        return;
+    }).catch(err => {
+        console.warn('Error', err);
     });
     return;
 });
