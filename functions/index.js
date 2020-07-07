@@ -10,36 +10,34 @@ const usuariosRef = db.collection('users');
 exports.agregarCola = functions.https.onCall((data, context) => {
     const keyUsuario = context.auth.uid;
     const keyLocal = data.keyLocal;
+    let posicionUsuario = 0;
+    let yaExisteEnCola = false;
 
     // set person in store's queue
     localesRef.doc(keyLocal).get().then(doc => {
         if (!doc.exists) {
-            console.error('Error: El local ' + keyLocal + ' no existe.');
+            console.log('Error: El local ' + keyLocal + ' no existe.');
         } else {
-            alreadyQueued = doc.data().queuedPeople;
-
-            if (!(alreadyQueued[0] === null)) {
-
-                for (let i = 0; i < alreadyQueued.length; i++) { queue.enqueue(alreadyQueued[i]); }
-
-                if (!queue.exists(keyUsuario)) {
-                    queue.enqueue(keyUsuario);
-                } else {
-                    console.error('Error: el usuario ya existe dentro de la cola.');
-                    return;
-                }
-
+            let colaDeUsuarios = new Queue(doc.data().queuedPeople);
+            if (colaDeUsuarios.isEmpty()) {
+                colaDeUsuarios.overwriteNext(keyUsuario);
             } else {
-                queue.enqueue(keyUsuario);
+                if (colaDeUsuarios.exists(keyUsuario)) {
+                    console.log('Error: El usuario ' + keyUsuario + " ya existe en la cola del local "
+                    + keyLocal + ". - Coleccion Local.");
+                    yaExisteEnCola = true;
+                    return;
+                } else {
+                    colaDeUsuarios.enqueue(keyUsuario);
+                    posicionUsuario = colaDeUsuarios.where();
+                }
             }
             localesRef.doc(keyLocal).set({
-                queueNumber: queue.length(),
-                queuedPeople: queue.total()
+                queueNumber: colaDeUsuarios.length(),
+                queuedPeople: colaDeUsuarios.total()
             }, { merge: true });
         }
-
         return;
-
     }).catch(err => { console.error('Error', err); });
 
     // set user queue status
@@ -47,84 +45,58 @@ exports.agregarCola = functions.https.onCall((data, context) => {
         if (!doc.exists) {
             console.error('Error: el usuario ' + keyUsuario + ' no existe.');
         } else {
-            alreadyMyQueues = doc.data().misColas;
-
-            if (!(alreadyMyQueues[0] === null)) {
-                for (let i = 0; i < alreadyMyQueues.length; i++) { myQueues.enqueue(alreadyMyQueues[i]); }
-
-                if (!myQueues.exists(keyLocal)) {
-                    myQueues.enqueue(keyLocal);
-                } else {
-                    console.error('Error: el usuario ya existe dentro de la cola.');
-                    return;
-                }
+            if(!yaExisteEnCola) {
+                misColas_Local = doc.data().misColas;
+                usuariosRef.doc(keyUsuario).collection('misColas').doc(keyLocal).create({
+                    posicion: posicionUsuario,
+                    keyLocal: keyLocal
+                });
             } else {
-                myQueues.enqueue(keyLocal);
+                console.log('El usuario ' + keyUsuario + " ya existe en la cola del local "
+                + keyLocal + ". - Coleccion Usuario.");
             }
-
-            usuariosRef.doc(keyUsuario).set({ misColas: myQueues.total() }, { merge: true })
         }
-
         return;
-
     }).catch(err => { console.error('Error', err); });
-
     return;
 });
 
 exports.eliminarCola = functions.https.onCall((data, context) => {
     const keyUsuario = data.keyUsuario;
     const keyLocal = context.auth.uid;
-    let alreadyQueued = [];
-    let alreadyMyQueues = [];
-    let queue = new Queue();
-    let myQueues = new Queue();
-
+    let errorEliminar = false;
+    
     localesRef.doc(keyLocal).get().then(doc => {
         if (!doc.exists) {
-            console.error('Error: el local requerido no existe.');
+            console.log('Error: El local' + keyLocal + ' no existe.');
         } else {
-            alreadyQueued = doc.data().queuedPeople;
-
-            for (let i = 0; i < alreadyQueued.length; i++) {
-                queue.enqueue(alreadyQueued[i]);
-            }
-            if (queue.exists(keyUsuario)) {
-                queue.delete(keyUsuario);
+            let colaDeUsuarios = new Queue(doc.data().queuedPeople);
+            if (!colaDeUsuarios.isEmpty()) {
+                if (colaDeUsuarios.exists(keyUsuario)) {
+                    let posicionUsuario = colaDeUsuarios.where(keyUsuario);
+                    if (posicionUsuario <= 3) {
+                        colaDeUsuarios.delete(posicionUsuario);
+                    } else {
+                        console.log('Error: El ' + keyUsuario + ' no esta dentro de los 3 primeros de la fila.');
+                        errorEliminar = true;
+                        return;
+                    }
+                } else {
+                    console.log('Error: El usuario ' + keyUsuario + ' no existe en la cola.');
+                    errorEliminar = true;
+                    return;
+                }
             } else {
-                console.error("Error: El usuario no existe en la cola.");
+                console.log('Error: El array "queuedPeople" esta vacio.');
+                errorEliminar = true;
+                return;
             }
         }
-
-        localesRef.doc(keyLocal).set({
-            queueNumber: queue.length(),
-            queuedPeople: queue.total()
-        });
-
         return;
+    }).catch(err => { console.log('Error', err); });
 
-    }).catch(err => { console.error('Error', err); });
-
-    localesRef.doc(keyUsuario).get().then(doc => {
-        if (!doc.exists) {
-            console.error('Error: el local requerido no existe.');
-        } else {
-            alreadyMyQueues = doc.data().misColas;
-
-            for (let i = 0; i < alreadyMyQueues.length; i++) {
-                myQueues.enqueue(alreadyMyQueues[i]);
-            }
-
-            if (myQueues.exists(keyLocal)) {
-                myQueues.delete(keyLocal);
-            } else {
-                console.error("Error: El usuario no existe en la cola.")
-            }
-        }
-
-        return;
-
-    }).catch(err => { console.error('Error', err); });
-
+    if (errorEliminar) {
+        usuariosRef.doc(keyUsuario).collection('misColas').doc(keyLocal).delete();
+    }
     return;
 });
