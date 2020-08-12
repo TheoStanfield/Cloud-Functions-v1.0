@@ -50,29 +50,14 @@ exports.agregarCola = functions.https.onCall(async (data, context) => {
                     posicion: posicionUsuario,
                     keyLocal: keyLocal,
                     distancia: distancia
-                });
+                }, { merge: true });
             }
         }
     } catch(err) {
         console.error('Error', err); 
     }
     
-    if (!ususarioEnCola) {
-        const payload = {
-            "notification": {
-                "title": nombreLocal,
-                "body": "Agregado a la cola."
-            }
-        }
-
-        admin.messaging().sendToDevice(context.instanceIdToken, payload).then(res => {
-            console.log('Notification sent.');
-            return;
-        }).catch(err => {
-            console.error('Notification not sent', err);
-        });
-
-    } else {
+    if (ususarioEnCola) {
         const payload = {
             "notification": {
                 "title": nombreLocal,
@@ -100,7 +85,6 @@ exports.eliminarCola = functions.https.onCall(async (data, context) => {
     let posicionUsuario = null;
     let nombreLocal = null;
     let tokenUsuario = null;
-    console.log(llamadaLocal);
     
     try {
         const docLocal = await localesRef.doc(keyLocal).get();
@@ -180,8 +164,6 @@ exports.eliminarCola = functions.https.onCall(async (data, context) => {
             }
         }
 
-        console.log('Token usuario: ' + tokenUsuario);
-
         admin.messaging().sendToDevice(tokenUsuario, payloadUsuario).then(res => {
             console.log('Notification sent.');
             return;
@@ -192,7 +174,7 @@ exports.eliminarCola = functions.https.onCall(async (data, context) => {
         const payload = {
             "notification": {
                 "title": nombreLocal,
-                "body": 'Has salido de la cola.'
+                "body": "Has salido de la cola."
             }
         }
 
@@ -258,9 +240,49 @@ exports.iniciarApp = functions.https.onCall(async (data, context) => {
     return;
 });
 
-exports.notifiacionDeCola = functions.firestore.document('locales/{localId}').onUpdate((snapshot, context) => {
+exports.notificacionDeCola = functions.firestore.document('locales/{localId}').onUpdate((snapshot, context) => {
+    const keyLocal = context.params.localId;
+    const nombreLocal = snapshot.after.data().title;
     const localBefore = snapshot.before.data();
     const localAfter = snapshot.after.data();
     const queuedPeopleBefore = new Queue(localBefore.queuedPeople);
     const queuedPeopleAfter = new Queue(localAfter.queuedPeople);
+
+    for (var i = 0; i < queuedPeopleAfter.length(); i++) {
+        if (queuedPeopleBefore.who(i) !== queuedPeopleAfter.who(i)) {
+
+            let posicion = i;
+            let keyUsuario = queuedPeopleAfter.who(posicion);
+
+            usuariosRef.doc(keyUsuario).get().then(userData => {
+                if (!userData.exists) {
+                    console.error('El ususario ' + keyUsuario + ' no existe.');
+                } else {
+                    usuariosRef.doc(keyUsuario).collection('misColas').doc(keyLocal).set({
+                        posicion: posicion
+                    }, { merge: true });
+
+                    const tokenUsuario = userData.data().token;
+                    const payload = {
+                        "notification": {
+                            "title": nombreLocal,
+                            "body": "Estas en la posicion " + (posicion + 1) + " de la cola."
+                        }
+                    }
+
+                    admin.messaging().sendToDevice(tokenUsuario, payload).then(res => {
+                        console.log('Notification sent.');
+                        return;
+                    }).catch(err => {
+                        console.error('Notification not sent', err);
+                    });
+                }
+
+                return;
+
+            }).catch(err => {
+                console.error('Error', err);
+            });
+        }
+    }
 });
